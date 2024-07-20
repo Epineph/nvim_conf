@@ -21,6 +21,7 @@ fi
 if [ ! -f "$NVIM_CONF_FILE" ]; then
 	if [ ! -d "$NVIM_CONF_DIR" ]; then
 		sudo mkdir -p $HOME/.config/nvim
+		sudo chown -R $USER $HOME/.config/nvim
 	fi
 	cat << 'EOF' > ~/.config/nvim/init.vim
 call plug#begin('~/.vim/plugged')
