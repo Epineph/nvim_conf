@@ -30,6 +30,9 @@ create_nvim_config() {
     cat << 'EOF' > $NVIM_CONF_FILE
 call plug#begin('~/.vim/plugged')
 
+" General purpose syntax highlighting
+Plug 'sheerun/vim-polyglot'
+
 " Python support
 Plug 'davidhalter/jedi-vim'
 
@@ -39,6 +42,11 @@ Plug 'arzg/vim-sh'
 " R support
 Plug 'jalvesaq/Nvim-R'
 
+" JavaScript and TypeScript support
+Plug 'pangloss/vim-javascript'
+Plug 'leafgarland/typescript-vim'
+Plug 'peitalin/vim-jsx-typescript'
+
 " Linting
 Plug 'dense-analysis/ale'
 
@@ -47,6 +55,8 @@ Plug 'morhetz/gruvbox'
 Plug 'joshdick/onedark.vim'
 Plug 'arcticicestudio/nord-vim'
 Plug 'ayu-theme/ayu-vim'
+Plug 'dracula/vim'
+Plug 'NLKNguyen/papercolor-theme'
 
 " File explorer
 Plug 'preservim/nerdtree'
@@ -68,6 +78,18 @@ Plug 'tpope/vim-commentary'
 " Surround text objects
 Plug 'tpope/vim-surround'
 
+" Autocompletion
+Plug 'neoclide/coc.nvim', {'branch': 'release'}
+
+" Snippets
+Plug 'honza/vim-snippets'
+
+" Indent line
+Plug 'Yggdroot/indentLine'
+
+" Pairs of handy bracket mappings
+Plug 'jiangmiao/auto-pairs'
+
 call plug#end()
 
 " Enable line numbers
@@ -83,6 +105,8 @@ autocmd FileType sh setlocal shiftwidth=2 tabstop=2
 let g:ale_linters = {
 \   'python': ['flake8'],
 \   'sh': ['shellcheck'],
+\   'javascript': ['eslint'],
+\   'typescript': ['tslint'],
 \}
 
 " Use system clipboard
@@ -98,6 +122,15 @@ let g:airline#extensions#tabline#enabled = 1
 " FZF settings
 set rtp+=~/.fzf
 let g:fzf_command_prefix = 'Fzf'
+
+" CoC (Conqueror of Completion) settings
+let g:coc_global_extensions = ['coc-pyright', 'coc-tsserver', 'coc-json', 'coc-html', 'coc-css']
+
+" Enable indentLine
+let g:indentLine_enabled = 1
+
+" Enable auto-pairs
+let g:auto_pairs_enabled = 1
 
 EOF
 }
@@ -119,8 +152,10 @@ change_colorscheme() {
 }
 
 # Uncomment the colorscheme you want to apply
-#change_colorscheme gruvbox
+change_colorscheme gruvbox
 # change_colorscheme onedark
-change_colorscheme nord
+# change_colorscheme nord
 # change_colorscheme ayu
+# change_colorscheme dracula
+# change_colorscheme PaperColor
 
