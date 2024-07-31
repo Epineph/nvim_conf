@@ -13,6 +13,8 @@ Neovim has powerful window and buffer management features that allow you to work
 ## Splitting Windows
 ### Splitting horizontally
 
+```vim<Esc>Go`````<Esc>````
+```vim<Esc>Go`````<Esc>````
 $ `:split` or
 $ ``:sp:`` 
 
@@ -23,6 +25,11 @@ Split the current window horizontally.
 
 ## Navigating Windows:
 
+```vim<Esc>Go`````<Esc>````
+```vim<Esc>Go`````<Esc>````
+```vim<Esc>Go`````<Esc>````
+```vim<Esc>Go`````<Esc>````
+```vim<Esc>Go`````<Esc>````
 * ``Ctrl-w h:`` Move to the window to the left.
 * ``Ctrl-w j:`` Move to the window below.
 * ``Ctrl-w k:`` Move to the window above.
