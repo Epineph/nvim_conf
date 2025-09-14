@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "global": "^4.4.0",
+    "lerna": "^8.2.3"
+  }
+}
