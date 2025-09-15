@@ -1,323 +1,101 @@
 #!/usr/bin/env bash
+# csv-show — Display CSV either as a pretty table (mlr+bat) or raw bytes (cat-like).
 #
-# setup_nvim_v15.sh
+# Requirements:
+#   - Pretty table mode: miller (mlr). bat is optional (falls back to plain mlr output).
+#   - Raw mode: no dependencies beyond coreutils.
 #
-# Installs vim-plug (if necessary) and generates a modern Neovim
-# configuration at ~/.config/nvim/init.vim.
+# Usage:
+#   csv-show [-t table|csv] [INPUT.csv|-]
 #
-# Features
-# ────────────────────────────────────────────────────────────────
-# • High-contrast Gruvbox (dark *or* light) via ellisonleao/gruvbox.nvim
-# • Treesitter syntax, rainbow brackets, indentation guides
-# • Telescope + FZF-native for lightning-fast search
-# • LSP, autocompletion, snippets (Mason • nvim-cmp • LuaSnip)
-# • Git integration (gitsigns + fugitive)
-# • Status-/buffer-lines, dashboard, which-key, todo-comments, autopairs
-# • Hooks for file explorer (nvim-tree) and floating UI (noice/trouble)
-# • Neoformat (code formatting) and Neomake (async linting/build)
+# Options:
+#   -t, --target {table|csv}  Presentation target (default: table)
+#   -h, --help                Show help and exit
 #
-# Usage
-# ────────────────────────────────────────────────────────────────
-#   ./setup_nvim_v15.sh [-b|--backup] [--light] [-t THEME]
+# Behavior:
+#   • table:   mlr --icsv --opprint cat INPUT | bat (if present) | else plain mlr output
+#   • csv:     exact raw bytes (like `cat INPUT` or pass-through from stdin)
 #
-#   -b | --backup   Back up existing init.vim and plug.vim
-#   --light         Use the *light* Gruvbox palette
-#   -t  | --theme   Override colourscheme (default: gruvbox)
-#   -h  | --help    Show this help
+# Environment:
+#   BAT_CSV_ARGS  Optional. Extra flags for `bat` in table mode.
+#                 Default: --style="grid,header,snip" --italic-text="always" --theme="gruvbox-dark" \
+#                          --squeeze-blank --squeeze-limit="2" --force-colorization --terminal-width="-1" \
+#                          --tabs="2" --paging="never" --chop-long-lines
 #
-# Requires: curl • git • a C compiler (for Telescope fzf-native)
-# Tested with Neovim ≥ 0.9 (LuaJIT 5.1)
+# Examples:
+#   csv-show -t table ~/path/to/data.csv
+#   csv-show -t csv   ~/path/to/data.csv
+#   mlr --icsv filter '$age>70' data.csv | csv-show -t table -
+#   mlr --icsv filter '$age>70' data.csv | csv-show -t csv   -   # raw pass-through
+#
+# Exit codes:
+#   0 success, 1 usage/input error, 2 missing dependency for requested mode, 3 processing failure
+set -Eeuo pipefail
+IFS=$'\n\t'
 
-set -euo pipefail
+have() { command -v "$1" >/dev/null 2>&1; }
+die()  { printf '%s\n' "$*" >&2; exit 1; }
 
-#######################
-# Default parameters
-#######################
-NVIM_DIR="$HOME/.config/nvim"
-INIT_VIM="$NVIM_DIR/init.vim"
-PLUG_VIM="$HOME/.local/share/nvim/site/autoload/plug.vim"
-PLUG_URL="https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim"
+print_help() { sed -n '1,120p' "$0" | sed 's/^# \{0,1\}//'; }
 
-BACKUP=false
-THEME="gruvbox"
-VARIANT="dark"        # toggled to 'light' by --light
+TARGET="table"   # {table|csv}
+INPUT=""
 
-#######################
-# Helper: show usage
-#######################
-usage() {
-  sed -n '27,60p' "$0"  # print the block above (help section)
-  exit 0
-}
+# Default bat args (can be overridden via BAT_CSV_ARGS)
+BAT_CSV_ARGS_DEFAULT='--style="grid,header,snip" --italic-text="always" --theme="gruvbox-dark" --squeeze-blank --squeeze-limit="2" --force-colorization --terminal-width="-1" --tabs="2" --paging="never" --chop-long-lines'
+BAT_CSV_ARGS="${BAT_CSV_ARGS:-$BAT_CSV_ARGS_DEFAULT}"
 
-#######################
-# Parse CLI arguments
-#######################
-while [[ $# -gt 0 ]]; do
+# ---- parse args --------------------------------------------------------------
+ARGS=()
+while (($#)); do
   case "$1" in
-    -b|--backup) BACKUP=true;        shift ;;
-    --light)     VARIANT="light";    shift ;;
-    -t|--theme)  THEME="$2";         shift 2;;
-    -h|--help)   usage;;
-    *) echo "Unknown option: $1"; usage;;
+    -t|--target)
+      TARGET="${2:-}"; shift 2
+      case "$TARGET" in table|csv) ;; *) die "Invalid --target: use 'table' or 'csv'";; esac
+      ;;
+    -h|--help) print_help; exit 0 ;;
+    --) shift; break ;;
+    -*) die "Unknown option: $1" ;;
+    *)  ARGS+=("$1"); shift ;;
   esac
 done
 
-#######################
-# Install vim-plug
-#######################
-install_plug() {
-  if [[ -f $PLUG_VIM ]]; then
-    echo "→ vim-plug already present."
-    $BACKUP && { echo "  Backing up plug.vim"; mv "$PLUG_VIM" "${PLUG_VIM}.bak"; }
+if ((${#ARGS[@]})); then
+  INPUT="${ARGS[0]}"
+else
+  # No positional: use stdin if provided; else error.
+  if [ ! -t 0 ]; then
+    INPUT="-"
+  else
+    die "No INPUT provided. Pass a file path or '-' for stdin. See --help."
   fi
-  echo "→ Installing/refreshing vim-plug..."
-  curl -fsLo "$PLUG_VIM" --create-dirs "$PLUG_URL"
-}
+fi
 
-#######################
-# Install formatters
-#######################
-#install_formatters() {
-#  echo "→ Checking/installing formatters..."
-#  if command -v micromamba >/dev/null 2>&1; then
-#    echo "  Installing black into pyEnv (micromamba)…"
-#    micromamba run -n pyEnv python -m pip install --upgrade black
-#  else
-#    echo "⚠️ micromamba not found — trying system pip"
-#    if command -v pip >/dev/null 2>&1; then
-#      python -m pip install --user --upgrade black
-#    else
-#      echo "⚠️ No pip available — skipping black"
-#    fi
-#  fi
-#
-#  if command -v npm >/dev/null 2>&1; then
-#    npm install -g prettier
-#  else
-#    echo "⚠️ Node.js/npm not found — skipping prettier"
-#  fi
-#}
+# Validate input when it's a path
+if [[ "$INPUT" != "-" && ! -r "$INPUT" ]]; then
+  die "Cannot read input file: $INPUT"
+fi
 
-#######################
-# Generate init.vim
-#######################
-create_config() {
-  echo "→ Writing $INIT_VIM"
-  mkdir -p "$NVIM_DIR"
-
-  cat > "$INIT_VIM" << 'EOF'
-"=====================================================================
-"  init.vim  —  generated by setup_nvim_v15.sh
-"=====================================================================
-
-" ── Plugin manager ───────────────────────────────────────────────
-call plug#begin('~/.vim/plugged')
-
-" ► Theme & UI
-Plug 'ellisonleao/gruvbox.nvim'
-Plug 'nvim-lualine/lualine.nvim'       " status line
-Plug 'akinsho/bufferline.nvim'         " tab / buffer line
-Plug 'lukas-reineke/indent-blankline.nvim'
-Plug 'norcalli/nvim-colorizer.lua'
-Plug 'goolord/alpha-nvim'              " dashboard
-Plug 'folke/noice.nvim'                " enhanced messages / cmd-line
-
-" ► Navigation & Search
-Plug 'nvim-telescope/telescope.nvim', { 'tag': '0.1.2' }
-Plug 'nvim-telescope/telescope-fzf-native.nvim', { 'do': 'make' }
-Plug 'folke/which-key.nvim'
-
-" ► File explorer
-Plug 'nvim-tree/nvim-tree.lua'
-Plug 'nvim-tree/nvim-web-devicons'
-
-" ► Syntax & visuals
-Plug 'nvim-treesitter/nvim-treesitter', {'do': ':TSUpdate'}
-Plug 'HiPhish/rainbow-delimiters.nvim'
-
-" ► Git
-Plug 'lewis6991/gitsigns.nvim'
-Plug 'tpope/vim-fugitive'
-
-" ► LSP & Completion
-Plug 'williamboman/mason.nvim'
-Plug 'williamboman/mason-lspconfig.nvim'
-Plug 'neovim/nvim-lspconfig'
-Plug 'hrsh7th/nvim-cmp'
-Plug 'hrsh7th/cmp-nvim-lsp'
-Plug 'saadparwaiz1/cmp_luasnip'
-Plug 'L3MON4D3/LuaSnip'
-
-" ► Quality-of-life
-Plug 'windwp/nvim-autopairs'
-Plug 'folke/todo-comments.nvim'
-Plug 'folke/trouble.nvim'
-Plug 'sbdchd/neoformat'                " code formatting
-Plug 'neomake/neomake'                 " async linting/build
-
-call plug#end()
-
-" ── Basic options ────────────────────────────────────────────────
-set number relativenumber
-set signcolumn=yes
-set cursorline
-set termguicolors
-set background=dark     " overridden by Lua block if --light was chosen
-set mouse=a
-set updatetime=300       " faster swap write, used by gitsigns
-set completeopt=menuone,noselect
-
-" ── Theme, statusline, bufferline, etc. (Lua) ────────────────────
-lua << LUA_END
---------------------------------------------------------------------
--- Abort early during the first headless PlugInstall bootstrap
-if vim.env.NVIM_BOOTSTRAP == '1' then return end
-
---------------------------------------------------------------------
--- Colourscheme  (hard-contrast Gruvbox) --------------------------
---------------------------------------------------------------------
-local variant   = vim.env.GX_VARIANT or 'dark'   -- injected by shell
-local contrast  = (variant == 'dark') and 'hard' or 'soft'
-
-require('gruvbox').setup {
-  contrast  = contrast,
-  italic    = { strings = false, comments = true },
-  overrides = { SignColumn = { bg = 'none' } },
-}
-vim.o.background = variant          -- 'dark' or 'light'
-vim.cmd('colorscheme gruvbox')
-
---------------------------------------------------------------------
--- Lualine + Bufferline (share Gruvbox palette) -------------------
---------------------------------------------------------------------
-require('lualine').setup {
-  options = { theme = 'gruvbox', icons_enabled = true, section_separators = '', component_separators = '' }
-}
-
-require('bufferline').setup {
-  options = { mode = 'tabs', separator_style = 'slant', always_show_bufferline = true }
-}
-
---------------------------------------------------------------------
--- Treesitter & rainbow brackets ----------------------------------
---------------------------------------------------------------------
-require('nvim-treesitter.configs').setup {
-  ensure_installed = { 'bash', 'lua', 'python', 'vim', 'markdown' },
-  highlight = { enable = true },
-  indent    = { enable = true },
-  rainbow   = { enable = true, extended_mode = true },
-}
-
---------------------------------------------------------------------
--- Telescope -------------------------------------------------------
---------------------------------------------------------------------
-require('telescope').setup {
-  defaults = { layout_config = { horizontal = { preview_width = 0.55 } } }
-}
-pcall(require('telescope').load_extension, 'fzf')
-
---------------------------------------------------------------------
--- Gitsigns --------------------------------------------------------
---------------------------------------------------------------------
-require('gitsigns').setup()
-
---------------------------------------------------------------------
--- Autocompletion --------------------------------------------------
---------------------------------------------------------------------
-local cmp = require('cmp')
-cmp.setup {
-  mapping = cmp.mapping.preset.insert(),
-  sources = { { name = 'nvim_lsp' }, { name = 'luasnip' } }
-}
-
---------------------------------------------------------------------
--- LSP (via Mason) -------------------------------------------------
---------------------------------------------------------------------
-require('mason').setup()
-require('mason-lspconfig').setup {
-  ensure_installed = { 'pyright', 'lua_ls', 'bashls' },
-  handlers = { function(server) require('lspconfig')[server].setup {} end }
-}
-
---------------------------------------------------------------------
--- Misc quality-of-life -------------------------------------------
---------------------------------------------------------------------
-require('nvim-autopairs').setup()
-require('which-key').setup()
-require('todo-comments').setup()
-require('trouble').setup()
-require('nvim-tree').setup()
-require('colorizer').setup()
-LUA_END
-
-" ── Neoformat settings ──────────────────────────────────────────
-" Format file on save if a formatter exists (guarded for bootstrap)
-augroup NeoformatAutoSave
-  autocmd!
-  autocmd BufWritePre * if exists(':Neoformat') | undojoin | Neoformat | endif
-augroup END
-
-" Use prettier for JS/TS/JSON/Markdown if installed
-let g:neoformat_enabled_javascript = ['prettier']
-let g:neoformat_enabled_typescript = ['prettier']
-let g:neoformat_enabled_json      = ['prettier']
-let g:neoformat_enabled_markdown  = ['prettier']
-
-" Aligns formatting to show cleaner diffs
-let g:neoformat_basic_format_align = 1
-let g:neoformat_basic_format_retab = 1
-let g:neoformat_basic_format_trim  = 1
-
-" ── Neomake settings ────────────────────────────────────────────
-" Run linting on save and on file open (guarded for bootstrap)
-augroup NeomakeAuto
-  autocmd!
-  autocmd BufWritePost,BufEnter * if exists(':Neomake') | Neomake | endif
-augroup END
-
-" Recommended defaults
-let g:neomake_open_list = 2     " auto-open location list if errors
-let g:neomake_list_height = 8
-
-" ── Autocommands & key-bindings  (VimL for portability) ──────────
-" Auto-open NvimTree when Neovim starts with a directory argument
-augroup NvStartup
-  autocmd!
-  autocmd VimEnter * if argc() == 1 && isdirectory(argv()[0]) | NvimTreeOpen | endif
-augroup END
-
-" Quick-save with Ctrl-s
-nnoremap <C-s> :w<CR>
-inoremap <C-s> <Esc>:w<CR>a
-
-" Map <Space> as leader
-nnoremap <Space> <Nop>
-let mapleader = " "
-let maplocalleader = " "
-
-" =================================================================
-"   End of generated init.vim
-" =================================================================
-EOF
-}
-
-#######################
-# Main sequence
-#######################
-install_plug
-# install_formatters
-create_config
-
-# export variant for Lua to read
-export GX_VARIANT="$VARIANT"
-
-echo "→ Installing/updated plugins (headless)…"
-# 1. headless run, skip Lua config, install plugs synchronously
-NVIM_BOOTSTRAP=1 nvim --headless +'PlugInstall --sync' +qa
-
-# 2. final launch (optional: uncomment to see dashboard on first open)
-# nvim +qa
-
-echo "✅ Neovim setup complete!  Launch with:  nvim"
-
+# ---- dispatch ---------------------------------------------------------------
+case "$TARGET" in
+  table)
+    have mlr || { echo "Missing dependency: miller (mlr) required for table mode." >&2; exit 2; }
+    if have bat; then
+      # shellcheck disable=SC2086  # intentional splitting of $BAT_CSV_ARGS
+      if ! mlr --icsv --opprint cat "$INPUT" | eval "bat $BAT_CSV_ARGS"; then
+        exit 3
+      fi
+    else
+      # No bat: still show aligned table via mlr
+      mlr --icsv --opprint cat "$INPUT" || exit 3
+    fi
+    ;;
+  csv)
+    # Exact bytes like cat; if INPUT='-', just pass-through
+    if [[ "$INPUT" == "-" ]]; then
+      cat || exit 3
+    else
+      cat -- "$INPUT" || exit 3
+    fi
+    ;;
+esac
