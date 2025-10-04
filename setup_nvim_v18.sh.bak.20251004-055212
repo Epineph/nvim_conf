@@ -105,25 +105,12 @@ create_config() {
 "=====================================================================
 
 " ── Plugin manager ───────────────────────────────────────────────
-" ── Headless bootstrap guard (skip system/UI plugins) ─────────────
-if exists("$NVIM_BOOTSTRAP") && $NVIM_BOOTSTRAP ==# "1"
-  " Skip system-wide vimfiles (e.g., broken nvim_ghost) during headless install
-  set runtimepath-=/usr/share/vim/vimfiles
-
-  " Short-circuit UI-heavy plugins during headless install
-  let g:loaded_bufferline = 1
-  let g:loaded_alpha = 1
-  let g:loaded_noice = 1
-  let g:loaded_nvim_tree = 1
-endif
-
 call plug#begin('~/.vim/plugged')
 
 " ► Theme & UI
 Plug 'ellisonleao/gruvbox.nvim'
 Plug 'nvim-lualine/lualine.nvim'
-Plug 'nvim-tree/nvim-web-devicons'    " coloured icons (recommended) if not already present
-Plug 'akinsho/bufferline.nvim', { 'tag': '*' }
+Plug 'akinsho/bufferline.nvim'
 Plug 'lukas-reineke/indent-blankline.nvim'
 Plug 'norcalli/nvim-colorizer.lua'
 Plug 'goolord/alpha-nvim'
